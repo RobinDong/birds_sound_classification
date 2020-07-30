@@ -1,5 +1,6 @@
 import time
 import warnings
+
 warnings.filterwarnings("ignore")
 import argparse
 
@@ -18,18 +19,21 @@ from dataset.sounds import BirdsDataset, ListLoader
 
 
 config = {
-    'num_classes': 21,
-    'num_workers': 4,
-    'verbose_period': 2000,
-    'eval_period': 40000,
-    'save_period': 40000,
-    'save_folder': 'ckpt/',
-    'ckpt_name': 'bird_cls',
+    "num_classes": 21,
+    "num_workers": 12,
+    "verbose_period": 2,
+    "eval_period": 40,
+    "save_period": 40,
+    "save_folder": "ckpt/",
+    "ckpt_name": "bird_cls",
 }
 
 
 def save_ckpt(net, iteration):
-    torch.save(net.state_dict(), config['save_folder'] + config['ckpt_name'] + '_' + str(iteration) + '.pth')
+    torch.save(
+        net.state_dict(),
+        config["save_folder"] + config["ckpt_name"] + "_" + str(iteration) + ".pth",
+    )
 
 
 def evaluate(net, eval_loader):
@@ -43,10 +47,11 @@ def evaluate(net, eval_loader):
             type_ids = Variable(type_ids.cuda())
 
         # forward
+        sounds = sounds.unsqueeze(3)
         out = net(sounds.permute(0, 3, 1, 2).float())
         # accuracy
         _, predict = torch.max(out, 1)
-        correct = (predict == type_ids)
+        correct = predict == type_ids
         sum_accuracy += correct.sum().item() / correct.size()[0]
         # loss
         loss = F.cross_entropy(out, type_ids)
@@ -60,63 +65,91 @@ def warmup_learning_rate(optimizer, steps, warmup_steps):
 
     lr = steps * slope + min_lr
     for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
+        param_group["lr"] = lr
 
 
 def train(args, train_loader, eval_loader):
     cfg.MODEL.TYPE = "regnet"
-    cfg.REGNET.DEPTH = 10
+    cfg.REGNET.DEPTH = 2
     cfg.REGNET.SE_ON = False
-    cfg.REGNET.W0 = 16
+    cfg.REGNET.W0 = 8
     cfg.MODEL.NUM_CLASSES = config["num_classes"]
     net = builders.build_model()
     print("net", net)
 
     if args.resume:
-        print('Resuming training, loading {}...'.format(args.resume))
-        ckpt_file = config['save_folder'] + config['ckpt_name'] + '_' + str(args.resume) + '.pth'
+        print("Resuming training, loading {}...".format(args.resume))
+        ckpt_file = (
+            config["save_folder"]
+            + config["ckpt_name"]
+            + "_"
+            + str(args.resume)
+            + ".pth"
+        )
         net.load_state_dict(torch.load(ckpt_file))
 
     if args.finetune:
-        print('Finetuning......')
+        print("Finetuning......")
         # Freeze all layers
         for param in net.parameters():
             param.requires_grad = False
         # Unfreeze some layers
         net.head.fc.weight.requires_grad = True
-        optimizer = optim.SGD(filter(lambda param: param.requires_grad, net.parameters()),
-                              lr=args.lr, momentum=args.momentum, nesterov=False)
+        optimizer = optim.SGD(
+            filter(lambda param: param.requires_grad, net.parameters()),
+            lr=args.lr,
+            momentum=args.momentum,
+            nesterov=False,
+        )
     else:
-        optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, nesterov=False)
+        optimizer = optim.SGD(
+            net.parameters(), lr=args.lr, momentum=args.momentum, nesterov=False
+        )
 
-    scheduler = ReduceLROnPlateau(optimizer, 'max', factor=0.5, patience=2,
-                                  verbose=True, threshold=1e-3, threshold_mode='abs')
+    scheduler = ReduceLROnPlateau(
+        optimizer,
+        "max",
+        factor=0.5,
+        patience=2,
+        verbose=True,
+        threshold=1e-3,
+        threshold_mode="abs",
+    )
 
     if args.fp16:
         import apex.amp as amp
+
         net, optimizer = amp.initialize(net, optimizer, opt_level="O2")
 
     batch_iterator = iter(train_loader)
     sum_accuracy = 0
     step = 0
-    for iteration in range(args.resume + 1, args.max_epoch * len(train_loader.dataset) // args.batch_size):
+    for iteration in range(
+        args.resume + 1, args.max_epoch * len(train_loader.dataset) // args.batch_size
+    ):
         t0 = time.time()
         try:
             sounds, type_ids = next(batch_iterator)
         except StopIteration:
             batch_iterator = iter(train_loader)
             sounds, type_ids = next(batch_iterator)
-        except Exception as e:
-            print('Loading data exception:', e)
+        except Exception as ex:
+            print("Loading data exception:", ex)
 
         if torch.cuda.is_available():
             sounds = Variable(sounds.cuda())
+            type_ids = Variable(type_ids.cuda())
         else:
             sounds = Variable(sounds)
-        sounds = sounds.permute(0, 3, 1, 2).float()
-        type_ids = Variable(type_ids.cuda())
+            type_ids = Variable(type_ids)
 
-        one_hot = torch.cuda.FloatTensor(type_ids.shape[0], config['num_classes'])
+        sounds = sounds.unsqueeze(3)
+        sounds = sounds.permute(0, 3, 1, 2).float()
+
+        if torch.cuda.is_available():
+            one_hot = torch.cuda.FloatTensor(type_ids.shape[0], config["num_classes"])
+        else:
+            one_hot = torch.FloatTensor(type_ids.shape[0], config["num_classes"])
         one_hot.fill_(4.54587e-5)
         one_hot.scatter_(1, type_ids.unsqueeze(1), 0.5)
 
@@ -125,11 +158,12 @@ def train(args, train_loader, eval_loader):
 
         # backprop
         optimizer.zero_grad()
-        loss = torch.sum(- one_hot * F.log_softmax(out, -1), -1).mean()
+        loss = torch.sum(-one_hot * F.log_softmax(out, -1), -1).mean()
         # loss = F.cross_entropy(out, type_ids)
 
         if args.fp16:
             import apex.amp as amp
+
             with amp.scale_loss(loss, optimizer) as scaled_loss:
                 scaled_loss.backward()
         else:
@@ -139,66 +173,101 @@ def train(args, train_loader, eval_loader):
         optimizer.step()
         t1 = time.time()
 
-        if iteration % config['verbose_period'] == 0:
+        if iteration % config["verbose_period"] == 0:
             # accuracy
             _, predict = torch.max(out, 1)
-            correct = (predict == type_ids)
+            correct = predict == type_ids
             accuracy = correct.sum().item() / correct.size()[0]
-            print('iter: %d loss: %.4f | acc: %.4f | time: %.4f sec.' %
-                  (iteration, loss.item(), accuracy, (t1 - t0)), flush=True)
+            print(
+                "iter: %d loss: %.4f | acc: %.4f | time: %.4f sec."
+                % (iteration, loss.item(), accuracy, (t1 - t0)),
+                flush=True,
+            )
             sum_accuracy += accuracy
             step += 1
 
-        warmup_steps = config['verbose_period'] * 4
+        warmup_steps = config["verbose_period"] * 4
         if iteration < warmup_steps:
             warmup_learning_rate(optimizer, iteration, warmup_steps)
 
-        if iteration % config['eval_period'] == 0 and iteration != 0 and step != 0:
+        if iteration % config["eval_period"] == 0 and iteration != 0 and step != 0:
             loss, accuracy = evaluate(net, eval_loader)
-            print('Eval accuracy:{} | Train accuracy:{}'.format(accuracy, sum_accuracy/step), flush=True)
+            print(
+                "Eval accuracy:{} | Train accuracy:{}".format(
+                    accuracy, sum_accuracy / step
+                ),
+                flush=True,
+            )
             scheduler.step(accuracy)
             sum_accuracy = 0
             step = 0
 
-        if iteration % config['save_period'] == 0 and iteration != 0:
+        if iteration % config["save_period"] == 0 and iteration != 0:
             # save checkpoint
-            print('Saving state, iter:', iteration, flush=True)
+            print("Saving state, iter:", iteration, flush=True)
             save_ckpt(net, iteration)
 
     # final checkpoint
     save_ckpt(net, iteration)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
     torch.backends.cudnn.enabled = True
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--batch_size', default=32, type=int, help='Batch size for training')
-    parser.add_argument('--max_epoch', default=100, type=int, help='Maximum epoches for training')
-    parser.add_argument('--dataset_root', default='V1', type=str, help='Root path of data')
-    parser.add_argument('--lr', default=0.1, type=float, help='Initial learning rate')
-    parser.add_argument('--momentum', default=0.9, type=float, help='Momentum value for optimizer')
-    parser.add_argument('--resume', default=0, type=int, help='Checkpoint steps to resume training from')
-    parser.add_argument('--finetune', default=False, type=bool, help='Finetune model by using all categories')
-    parser.add_argument('--fp16', default=False, type=bool, help='Use float16 precision to train')
+    parser.add_argument(
+        "--batch_size", default=32, type=int, help="Batch size for training"
+    )
+    parser.add_argument(
+        "--max_epoch", default=100, type=int, help="Maximum epoches for training"
+    )
+    parser.add_argument(
+        "--dataset_root", default="V1", type=str, help="Root path of data"
+    )
+    parser.add_argument("--lr", default=0.1, type=float, help="Initial learning rate")
+    parser.add_argument(
+        "--momentum", default=0.9, type=float, help="Momentum value for optimizer"
+    )
+    parser.add_argument(
+        "--resume", default=0, type=int, help="Checkpoint steps to resume training from"
+    )
+    parser.add_argument(
+        "--finetune",
+        default=False,
+        type=bool,
+        help="Finetune model by using all categories",
+    )
+    parser.add_argument(
+        "--fp16", default=False, type=bool, help="Use float16 precision to train"
+    )
     args = parser.parse_args()
 
     t0 = time.time()
-    list_loader = ListLoader(args.dataset_root, config['num_classes'], args.finetune)
+    list_loader = ListLoader(args.dataset_root, config["num_classes"], args.finetune)
     sound_list, train_indices, eval_indices = list_loader.sound_indices()
 
     train_set = BirdsDataset(sound_list, train_indices)
     eval_set = BirdsDataset(sound_list, eval_indices)
-    print('train set: {} eval set: {}'.format(len(train_set), len(eval_set)))
+    print("train set: {} eval set: {}".format(len(train_set), len(eval_set)))
 
-    train_loader = data.DataLoader(train_set, args.batch_size, num_workers=config['num_workers'],
-                                   shuffle=True, pin_memory=True,
-                                   collate_fn=BirdsDataset.my_collate)
-    eval_loader = data.DataLoader(eval_set, args.batch_size // 4, num_workers=config['num_workers'],
-                                  shuffle=False, pin_memory=True,
-                                  collate_fn=BirdsDataset.my_collate)
+    train_loader = data.DataLoader(
+        train_set,
+        args.batch_size,
+        num_workers=config["num_workers"],
+        shuffle=True,
+        pin_memory=True,
+        collate_fn=BirdsDataset.my_collate,
+    )
+    eval_loader = data.DataLoader(
+        eval_set,
+        args.batch_size // 4,
+        num_workers=config["num_workers"],
+        shuffle=False,
+        pin_memory=True,
+        collate_fn=BirdsDataset.my_collate,
+    )
     t1 = time.time()
-    print('Load dataset with {} secs'.format(t1 - t0))
+    print("Load dataset with {} secs".format(t1 - t0))
 
     train(args, train_loader, eval_loader)
