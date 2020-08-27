@@ -5,19 +5,11 @@ import numpy as np
 import torch.utils.data as data
 
 from collections import Counter
-from mutagen.mp3 import MP3
-
-IMAGE_SHAPE = (300, 300)
 
 SEED = 20200729
 EVAL_RATIO = 0.1
-PERIOD = 10  # seconds
+PERIOD = 5  # seconds
 MFCCS = 40
-
-
-def get_sound_period(sound_path):
-    audio = MP3(sound_path)
-    return int(audio.info.length) // PERIOD
 
 
 class ListLoader(object):
@@ -40,8 +32,19 @@ class ListLoader(object):
 
                 for sound_file in os.listdir(os.path.join(root_path, dir_name)):
                     full_path = os.path.join(root_path, dir_name, sound_file)
-                    for index in range(get_sound_period(full_path)):
-                        self.sound_list.append((index, full_path, type_id))
+                    audio, sample_rate = librosa.load(full_path)
+                    seconds = audio.shape[0] / sample_rate
+                    if seconds < PERIOD:
+                        continue
+                    mfccs = librosa.feature.mfcc(y=audio, sr=sample_rate, n_mfcc=MFCCS)
+                    print("mfccs:", mfccs.shape)
+                    for index in range(int(seconds) // PERIOD):
+                        sample = mfccs[
+                            :, index * PERIOD * MFCCS : (1 + index) * PERIOD * MFCCS
+                        ]
+                        # sample = np.expand_dims(sample, axis=1)
+                        print("sample:", sample.shape)
+                        self.sound_list.append((sample, type_id))
 
         avg_count = sum(self.category_count.values()) / len(self.category_count)
         print("Avg count per category:", avg_count)
@@ -69,10 +72,7 @@ class BirdsDataset(data.Dataset):
         self.sound_indices = sound_indices
 
     def __getitem__(self, index):
-        fragment, sound_path, type_id = self.sound_list[self.sound_indices[index]]
-        audio, sample_rate = librosa.load(sound_path)
-        mfccs = librosa.feature.mfcc(y=audio, sr=sample_rate, n_mfcc=MFCCS)
-        sample = mfccs[:, fragment * PERIOD * MFCCS : (1 + fragment) * PERIOD * MFCCS]
+        sample, type_id = self.sound_list[self.sound_indices[index]]
         return sample, int(type_id)
 
     def __len__(self):
@@ -85,7 +85,7 @@ class BirdsDataset(data.Dataset):
 
 
 if __name__ == "__main__":
-    list_loader = ListLoader("V1", 21)
+    list_loader = ListLoader("V1", 100)
     sound_list, train_lst, eval_lst = list_loader.sound_indices()
     print("train_lst", train_lst, len(train_lst))
     print("eval_lst", eval_lst, len(eval_lst))

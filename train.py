@@ -19,8 +19,8 @@ from dataset.sounds import BirdsDataset, ListLoader
 
 
 config = {
-    "num_classes": 21,
-    "num_workers": 12,
+    "num_classes": 100,
+    "num_workers": 6,
     "verbose_period": 2,
     "eval_period": 40,
     "save_period": 40,
@@ -70,9 +70,9 @@ def warmup_learning_rate(optimizer, steps, warmup_steps):
 
 def train(args, train_loader, eval_loader):
     cfg.MODEL.TYPE = "regnet"
-    cfg.REGNET.DEPTH = 2
+    cfg.REGNET.DEPTH = 4
     cfg.REGNET.SE_ON = False
-    cfg.REGNET.W0 = 8
+    cfg.REGNET.W0 = 16
     cfg.MODEL.NUM_CLASSES = config["num_classes"]
     net = builders.build_model()
     print("net", net)
@@ -217,7 +217,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--batch_size", default=32, type=int, help="Batch size for training"
+        "--batch_size", default=64, type=int, help="Batch size for training"
     )
     parser.add_argument(
         "--max_epoch", default=100, type=int, help="Maximum epoches for training"
