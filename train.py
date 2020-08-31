@@ -21,9 +21,8 @@ from dataset.sounds import BirdsDataset, ListLoader
 config = {
     "num_classes": 100,
     "num_workers": 6,
-    "verbose_period": 2,
+    "verbose_period": 10,
     "eval_period": 40,
-    "save_period": 40,
     "save_folder": "ckpt/",
     "ckpt_name": "bird_cls",
 }
@@ -124,6 +123,7 @@ def train(args, train_loader, eval_loader):
     batch_iterator = iter(train_loader)
     sum_accuracy = 0
     step = 0
+    config["eval_period"] = len(train_loader.dataset) // args.batch_size
     for iteration in range(
         args.resume + 1, args.max_epoch * len(train_loader.dataset) // args.batch_size
     ):
@@ -202,7 +202,7 @@ def train(args, train_loader, eval_loader):
             sum_accuracy = 0
             step = 0
 
-        if iteration % config["save_period"] == 0 and iteration != 0:
+        if iteration % config["eval_period"] == 0 and iteration != 0:
             # save checkpoint
             print("Saving state, iter:", iteration, flush=True)
             save_ckpt(net, iteration)
@@ -261,7 +261,7 @@ if __name__ == "__main__":
     )
     eval_loader = data.DataLoader(
         eval_set,
-        args.batch_size // 4,
+        args.batch_size,
         num_workers=config["num_workers"],
         shuffle=False,
         pin_memory=True,

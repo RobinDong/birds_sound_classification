@@ -9,7 +9,7 @@ from collections import Counter
 SEED = 20200729
 EVAL_RATIO = 0.1
 PERIOD = 5  # seconds
-MFCCS = 40
+MFCCS = 80
 
 
 class ListLoader(object):
@@ -37,14 +37,13 @@ class ListLoader(object):
                     if seconds < PERIOD:
                         continue
                     mfccs = librosa.feature.mfcc(y=audio, sr=sample_rate, n_mfcc=MFCCS)
-                    print("mfccs:", mfccs.shape)
+                    ratio = int(mfccs.shape[1] / seconds)
                     for index in range(int(seconds) // PERIOD):
                         sample = mfccs[
-                            :, index * PERIOD * MFCCS : (1 + index) * PERIOD * MFCCS
+                            :, index * PERIOD * ratio : (1 + index) * PERIOD * ratio
                         ]
-                        # sample = np.expand_dims(sample, axis=1)
-                        print("sample:", sample.shape)
-                        self.sound_list.append((sample, type_id))
+                        if sample.shape[1] == PERIOD * ratio:
+                            self.sound_list.append((sample, type_id))
 
         avg_count = sum(self.category_count.values()) / len(self.category_count)
         print("Avg count per category:", avg_count)
