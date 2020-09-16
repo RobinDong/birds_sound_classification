@@ -1,7 +1,4 @@
 import time
-import warnings
-
-warnings.filterwarnings("ignore")
 import argparse
 
 import torch
@@ -9,6 +6,8 @@ import torch.optim as optim
 import torch.utils.data as data
 import torch.nn.functional as F
 import torch.nn as nn
+
+from utils import augment
 
 import pycls.core.builders as builders
 from pycls.core.config import cfg
@@ -19,7 +18,7 @@ from dataset.sounds import BirdsDataset, ListLoader
 
 
 config = {
-    "num_classes": 100,
+    "num_classes": 1500,
     "num_workers": 6,
     "verbose_period": 10,
     "eval_period": 40,
@@ -69,11 +68,14 @@ def warmup_learning_rate(optimizer, steps, warmup_steps):
 
 def train(args, train_loader, eval_loader):
     cfg.MODEL.TYPE = "regnet"
-    cfg.REGNET.DEPTH = 4
+    cfg.REGNET.DEPTH = 20
     cfg.REGNET.SE_ON = False
-    cfg.REGNET.W0 = 16
+    cfg.REGNET.W0 = 128
+    cfg.BN.NUM_GROUPS = 8
+    cfg.ANYNET.STEM_CHANNELS = 1
     cfg.MODEL.NUM_CLASSES = config["num_classes"]
     net = builders.build_model()
+    net = net.cuda(device=torch.cuda.current_device())
     print("net", net)
 
     if args.resume:
@@ -115,6 +117,8 @@ def train(args, train_loader, eval_loader):
         threshold_mode="abs",
     )
 
+    aug = augment.Augment().cuda()
+
     if args.fp16:
         import apex.amp as amp
 
@@ -124,6 +128,7 @@ def train(args, train_loader, eval_loader):
     sum_accuracy = 0
     step = 0
     config["eval_period"] = len(train_loader.dataset) // args.batch_size
+    config["verbose_period"] = config["eval_period"] // 5
     for iteration in range(
         args.resume + 1, args.max_epoch * len(train_loader.dataset) // args.batch_size
     ):
@@ -153,6 +158,9 @@ def train(args, train_loader, eval_loader):
         one_hot.fill_(4.54587e-5)
         one_hot.scatter_(1, type_ids.unsqueeze(1), 0.5)
 
+        # augmentation
+        if not args.finetune:
+            sounds = aug(sounds)
         # forward
         out = net(sounds)
 
@@ -223,7 +231,7 @@ if __name__ == "__main__":
         "--max_epoch", default=100, type=int, help="Maximum epoches for training"
     )
     parser.add_argument(
-        "--dataset_root", default="V1", type=str, help="Root path of data"
+        "--dataset_root", default="/media/data2/sanbai/mfcc_sound", type=str, help="Root path of data"
     )
     parser.add_argument("--lr", default=0.1, type=float, help="Initial learning rate")
     parser.add_argument(

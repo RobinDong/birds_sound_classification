@@ -1,5 +1,4 @@
 import os
-import librosa
 import numpy as np
 
 import torch.utils.data as data
@@ -9,7 +8,8 @@ from collections import Counter
 SEED = 20200729
 EVAL_RATIO = 0.1
 PERIOD = 5  # seconds
-MFCCS = 80
+SHIFT_LEN = 20  # micro-seconds
+PERIOD_LEN = int(PERIOD * 1000 / SHIFT_LEN)
 
 
 class ListLoader(object):
@@ -24,26 +24,23 @@ class ListLoader(object):
                 if type_id < 0 or type_id > num_classes:
                     print("Wrong directory: {}!".format(dir_name))
                     continue
-                for sound_file in os.listdir(os.path.join(root_path, dir_name)):
+                for _ in os.listdir(os.path.join(root_path, dir_name)):
                     self.category_count[type_id] += 1
 
-                if not finetune and self.category_count[type_id] < 100:
+                if not finetune and self.category_count[type_id] < 5:
                     continue
 
-                for sound_file in os.listdir(os.path.join(root_path, dir_name)):
-                    full_path = os.path.join(root_path, dir_name, sound_file)
-                    audio, sample_rate = librosa.load(full_path)
-                    seconds = audio.shape[0] / sample_rate
-                    if seconds < PERIOD:
+                for npy_file in os.listdir(os.path.join(root_path, dir_name)):
+                    full_path = os.path.join(root_path, dir_name, npy_file)
+                    audio = np.load(full_path)
+
+                    if audio.shape[0] < PERIOD_LEN:
                         continue
-                    mfccs = librosa.feature.mfcc(y=audio, sr=sample_rate, n_mfcc=MFCCS)
-                    ratio = int(mfccs.shape[1] / seconds)
-                    for index in range(int(seconds) // PERIOD):
-                        sample = mfccs[
-                            :, index * PERIOD * ratio : (1 + index) * PERIOD * ratio
-                        ]
-                        if sample.shape[1] == PERIOD * ratio:
-                            self.sound_list.append((sample, type_id))
+                    for seg_index in range(audio.shape[0] // PERIOD_LEN):
+                        """sample = audio[index * period_len: (1 + index) * period_len]
+                        print("sample:", sample.shape, sample.dtype)
+                        if sample.shape[0] == period_len:"""
+                        self.sound_list.append((full_path, seg_index, type_id))
 
         avg_count = sum(self.category_count.values()) / len(self.category_count)
         print("Avg count per category:", avg_count)
@@ -71,7 +68,9 @@ class BirdsDataset(data.Dataset):
         self.sound_indices = sound_indices
 
     def __getitem__(self, index):
-        sample, type_id = self.sound_list[self.sound_indices[index]]
+        full_path, seg_index, type_id = self.sound_list[self.sound_indices[index]]
+        audio = np.load(full_path)
+        sample = audio[seg_index * PERIOD_LEN: (1 + seg_index) * PERIOD_LEN]
         return sample, int(type_id)
 
     def __len__(self):

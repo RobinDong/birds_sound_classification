@@ -5,6 +5,16 @@ import argparse
 import traceback
 import subprocess
 
+from functools import partial
+from multiprocessing import Pool, current_process
+
+
+RETRY = 10
+RETRY_WAIT = 10  # seconds
+
+TOO_SMALL_SIZE = 4096
+TOO_BIG_SIZE = 100 * 1048576
+
 
 def process(full_path, args):
     sub_dir = full_path.split("/")[-2]
@@ -12,24 +22,24 @@ def process(full_path, args):
     if not os.path.exists(output_path):
         os.mkdir(output_path)
 
-    for _ in range(10):
+    for _ in range(RETRY):
         try:
             file_size = os.stat(full_path).st_size
         except Exception as ex:
             print("Stat file failed:", ex)
             traceback.print_exc(file=sys.stdout)
-            time.sleep(10)
+            time.sleep(RETRY_WAIT)
             continue
         break
 
-    if file_size <= 4096 or file_size > (100 * 1048576):
+    if file_size <= TOO_SMALL_SIZE or file_size > TOO_BIG_SIZE:
         return
 
     print("full_path:", full_path)
     sound_name, _ = os.path.splitext(full_path.split("/")[-1])
     new_path = os.path.join(output_path, f"{sound_name}.npy")
 
-    for _ in range(10):
+    for _ in range(RETRY):
         result = subprocess.run(
             f"python3 -u export_single.py --input \"{full_path}\" --output \"{new_path}\"",
             shell=True)
@@ -37,6 +47,11 @@ def process(full_path, args):
             print("retry")
         else:
             break
+
+    job_index = current_process().name.split("-")[-1]
+    job_index = int(job_index) - 1
+    with open(f"finish.{job_index}.lst", "a+") as fp:
+        fp.write(full_path + "\n")
 
 
 if __name__ == "__main__":
@@ -53,16 +68,16 @@ if __name__ == "__main__":
         os.mkdir(args.output_root)
 
     finish_list = set()
-    if os.path.exists("finish.lst"):
-        with open("finish.lst") as fp:
-            while True:
-                line = fp.readline()
-                if not line:
-                    break
-                finish_list.add(line)
+    for cpu in range(args.cpus):
+        if os.path.exists(f"finish.{cpu}.lst"):
+            with open(f"finish.{cpu}.lst") as fp:
+                while True:
+                    line = fp.readline()
+                    if not line:
+                        break
+                    finish_list.add(line)
 
-    finish_file = open("finish.lst", "a+")
-
+    need_to_do = []
     with open("task.lst") as fp:
         while True:
             line = fp.readline()
@@ -70,5 +85,13 @@ if __name__ == "__main__":
                 break
             if line in finish_list:
                 continue
-            process(line.strip(), args)
-            finish_file.write(line)
+            need_to_do.append(line.strip())
+
+    pool = Pool(processes=args.cpus)
+    pool.map(
+        partial(
+            process,
+            args=args,
+        ),
+        need_to_do
+    )
