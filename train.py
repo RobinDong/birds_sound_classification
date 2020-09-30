@@ -70,7 +70,7 @@ def train(args, train_loader, eval_loader):
     cfg.MODEL.TYPE = "regnet"
     cfg.REGNET.DEPTH = 20
     cfg.REGNET.SE_ON = False
-    cfg.REGNET.W0 = 128
+    cfg.REGNET.W0 = 96
     cfg.BN.NUM_GROUPS = 8
     cfg.ANYNET.STEM_CHANNELS = 1
     cfg.MODEL.NUM_CLASSES = config["num_classes"]
@@ -220,6 +220,7 @@ def train(args, train_loader, eval_loader):
 
 
 if __name__ == "__main__":
+    torch.multiprocessing.set_start_method("spawn")
     torch.backends.cudnn.benchmark = True
     torch.backends.cudnn.enabled = True
 

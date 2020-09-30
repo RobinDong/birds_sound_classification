@@ -10,6 +10,7 @@ EVAL_RATIO = 0.1
 PERIOD = 5  # seconds
 SHIFT_LEN = 20  # micro-seconds
 PERIOD_LEN = int(PERIOD * 1000 / SHIFT_LEN)
+SEGMENT_LEN = int(4 * 1000 / SHIFT_LEN)  # 4ms overlap with previous period
 
 
 class ListLoader(object):
@@ -36,11 +37,13 @@ class ListLoader(object):
 
                     if audio.shape[0] < PERIOD_LEN:
                         continue
-                    for seg_index in range(audio.shape[0] // PERIOD_LEN):
+
+                    for seg_index in range(audio.shape[0] // SEGMENT_LEN):
                         """sample = audio[index * period_len: (1 + index) * period_len]
                         print("sample:", sample.shape, sample.dtype)
                         if sample.shape[0] == period_len:"""
-                        self.sound_list.append((full_path, seg_index, type_id))
+                        if seg_index * SEGMENT_LEN + PERIOD_LEN <= audio.shape[0]:
+                            self.sound_list.append((full_path, seg_index, type_id))
 
         avg_count = sum(self.category_count.values()) / len(self.category_count)
         print("Avg count per category:", avg_count)
@@ -70,7 +73,7 @@ class BirdsDataset(data.Dataset):
     def __getitem__(self, index):
         full_path, seg_index, type_id = self.sound_list[self.sound_indices[index]]
         audio = np.load(full_path)
-        sample = audio[seg_index * PERIOD_LEN: (1 + seg_index) * PERIOD_LEN]
+        sample = audio[seg_index * SEGMENT_LEN: seg_index * SEGMENT_LEN + PERIOD_LEN]
         return sample, int(type_id)
 
     def __len__(self):
