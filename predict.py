@@ -57,7 +57,9 @@ def predict(args):
     label_map = load_label_file()
     print(values, indices)
     for ind, val in zip(indices[0], values[0]):
-        print(ind.item(), label_map[ind.item()], f"({val.item()*100:.2f}%)")
+        ind = ind.item()
+        if ind > 0 and ind < 1500:
+            print(ind, label_map[ind], f"({val.item()*100:.2f}%)")
 
 
 if __name__ == "__main__":

@@ -155,7 +155,7 @@ def train(args, train_loader, eval_loader):
             one_hot = torch.cuda.FloatTensor(type_ids.shape[0], config["num_classes"])
         else:
             one_hot = torch.FloatTensor(type_ids.shape[0], config["num_classes"])
-        one_hot.fill_(4.54587e-5)
+        one_hot.fill_(3.33556e-4)
         one_hot.scatter_(1, type_ids.unsqueeze(1), 0.5)
 
         # augmentation

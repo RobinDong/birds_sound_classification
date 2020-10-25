@@ -31,12 +31,18 @@ class ListLoader(object):
                 if not finetune and self.category_count[type_id] < 5:
                     continue
 
+                count = 0
                 for npy_file in os.listdir(os.path.join(root_path, dir_name)):
+                    # Only choose A grade bird audio
+                    if npy_file.split(".")[-2] != "A":
+                        continue
                     full_path = os.path.join(root_path, dir_name, npy_file)
                     audio = np.load(full_path)
 
                     if audio.shape[0] < PERIOD_LEN:
                         continue
+
+                    count += 1
 
                     for seg_index in range(audio.shape[0] // SEGMENT_LEN):
                         """sample = audio[index * period_len: (1 + index) * period_len]

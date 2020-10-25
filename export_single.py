@@ -16,7 +16,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     try:
-        audio, sr = librosa.load(args.input, sr=8000, mono=True, dtype=np.float32)
+        audio, sr = librosa.load(args.input, sr=16000, mono=True, dtype=np.float32)
     except Exception as ex:
         print("Load autio failed:", ex)
         traceback.print_exc(file=sys.stdout)
