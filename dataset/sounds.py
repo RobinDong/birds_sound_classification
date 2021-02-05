@@ -7,10 +7,6 @@ from collections import Counter
 
 SEED = 20200729
 EVAL_RATIO = 0.1
-PERIOD = 5  # seconds
-SHIFT_LEN = 20  # micro-seconds
-PERIOD_LEN = int(PERIOD * 1000 / SHIFT_LEN)
-SEGMENT_LEN = int(4 * 1000 / SHIFT_LEN)  # 4ms overlap with previous period
 
 
 class ListLoader(object):
@@ -19,39 +15,58 @@ class ListLoader(object):
 
         self.category_count = Counter()  # number of files for each category
         self.sound_list = []
+        self.labelmap = {}
+        dir_count = 0
         for directory in os.walk(root_path):
             for dir_name in directory[1]:  # All subdirectories
-                type_id = int(dir_name)
-                if type_id < 0 or type_id > num_classes:
+                pos = dir_name.find(".")
+                type_id = int(dir_name[0:pos])
+                type_name = dir_name[pos+1:]
+                if type_id < 0 or type_id >= num_classes:
                     print("Wrong directory: {}!".format(dir_name))
                     continue
-                for _ in os.listdir(os.path.join(root_path, dir_name)):
-                    self.category_count[type_id] += 1
+                self.labelmap[type_id] = type_name
+                for file in os.listdir(os.path.join(root_path, dir_name)):
+                    if file.endswith("npy"):
+                        self.category_count[type_id] += 1
 
-                if not finetune and self.category_count[type_id] < 5:
+                if not finetune and self.category_count[type_id] < 20:
                     continue
 
+                dir_count += 1
+
+                enough = False
                 count = 0
-                for npy_file in os.listdir(os.path.join(root_path, dir_name)):
-                    # Only choose A grade bird audio
-                    if npy_file.split(".")[-2] != "A":
+                for file in os.listdir(os.path.join(root_path, dir_name)):
+                    if not file.endswith("npy"):
                         continue
-                    full_path = os.path.join(root_path, dir_name, npy_file)
-                    audio = np.load(full_path)
+                    full_path = os.path.join(root_path, dir_name, file)
 
-                    if audio.shape[0] < PERIOD_LEN:
-                        continue
+                    # Find corresponding segments file
+                    seg_files = os.path.join(
+                        root_path, dir_name, file + ".segments"
+                    )
+                    splits = []
+                    with open(seg_files, "r") as fp:
+                        splits = eval(fp.read())
+                    for begin, end in splits:
+                        if (end - begin) != 78:
+                            print(f"The part range is not 78. [{seg_files}]")
+                            continue
+                        self.sound_list.append(
+                            (full_path, begin, end, type_id)
+                        )
+                        count += 1
+                        if count > 50:
+                            enough = True
+                            break
+                    if enough:
+                        break
 
-                    count += 1
-
-                    for seg_index in range(audio.shape[0] // SEGMENT_LEN):
-                        """sample = audio[index * period_len: (1 + index) * period_len]
-                        print("sample:", sample.shape, sample.dtype)
-                        if sample.shape[0] == period_len:"""
-                        if seg_index * SEGMENT_LEN + PERIOD_LEN <= audio.shape[0]:
-                            self.sound_list.append((full_path, seg_index, type_id))
-
-        avg_count = sum(self.category_count.values()) / len(self.category_count)
+        avg_count = sum(self.category_count.values()) / len(
+            self.category_count
+        )
+        print("Active categories:", dir_count)
         print("Avg count per category:", avg_count)
         minimum = min(self.category_count, key=self.category_count.get)
         print("Min count category:", self.category_count[minimum])
@@ -68,6 +83,14 @@ class ListLoader(object):
 
         return self.sound_list, train_indices, eval_indices
 
+    def export_labelmap(self, path="labelmap.csv"):
+        with open(path, "w") as fp:
+            for type_id, type_name in self.labelmap.items():
+                count = self.category_count[type_id]
+                fp.write(
+                    str(type_id) + "," + type_name + "," + str(count) + "\n"
+                )
+
 
 class BirdsDataset(data.Dataset):
     """ All sounds and classes for birds through the world """
@@ -77,9 +100,11 @@ class BirdsDataset(data.Dataset):
         self.sound_indices = sound_indices
 
     def __getitem__(self, index):
-        full_path, seg_index, type_id = self.sound_list[self.sound_indices[index]]
+        full_path, begin, end, type_id = self.sound_list[
+            self.sound_indices[index]
+        ]
         audio = np.load(full_path)
-        sample = audio[seg_index * SEGMENT_LEN: seg_index * SEGMENT_LEN + PERIOD_LEN]
+        sample = audio[:, begin:end].copy()
         return sample, int(type_id)
 
     def __len__(self):

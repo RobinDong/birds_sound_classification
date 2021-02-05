@@ -1,4 +1,5 @@
 import time
+import datetime
 import argparse
 
 import torch
@@ -18,10 +19,8 @@ from dataset.sounds import BirdsDataset, ListLoader
 
 
 config = {
-    "num_classes": 1500,
-    "num_workers": 6,
-    "verbose_period": 10,
-    "eval_period": 40,
+    "num_classes": 10950,
+    "num_workers": 3,
     "save_folder": "ckpt/",
     "ckpt_name": "bird_cls",
 }
@@ -30,14 +29,19 @@ config = {
 def save_ckpt(net, iteration):
     torch.save(
         net.state_dict(),
-        config["save_folder"] + config["ckpt_name"] + "_" + str(iteration) + ".pth",
+        config["save_folder"]
+        + config["ckpt_name"]
+        + "_"
+        + str(iteration)
+        + ".pth",
     )
 
 
 def evaluate(net, eval_loader):
     total_loss = 0.0
     batch_iterator = iter(eval_loader)
-    sum_accuracy = 0
+    sum_accuracy = 0.0
+    aug = augment.Augment(dropout=False).cuda()
     for iteration in range(len(eval_loader)):
         sounds, type_ids = next(batch_iterator)
         if torch.cuda.is_available():
@@ -46,6 +50,7 @@ def evaluate(net, eval_loader):
 
         # forward
         sounds = sounds.unsqueeze(3)
+        sounds = aug(sounds)
         out = net(sounds.permute(0, 3, 1, 2).float())
         # accuracy
         _, predict = torch.max(out, 1)
@@ -70,8 +75,8 @@ def train(args, train_loader, eval_loader):
     cfg.MODEL.TYPE = "regnet"
     cfg.REGNET.DEPTH = 20
     cfg.REGNET.SE_ON = False
-    cfg.REGNET.W0 = 96
-    cfg.BN.NUM_GROUPS = 8
+    cfg.REGNET.W0 = 256
+    # cfg.BN.NUM_GROUPS = 8
     cfg.ANYNET.STEM_CHANNELS = 1
     cfg.MODEL.NUM_CLASSES = config["num_classes"]
     net = builders.build_model()
@@ -95,6 +100,9 @@ def train(args, train_loader, eval_loader):
         for param in net.parameters():
             param.requires_grad = False
         # Unfreeze some layers
+        for layer in [net.s1.b18, net.s1.b19, net.s1.b20]:
+            for param in layer.parameters():
+                param.requies_grad = True
         net.head.fc.weight.requires_grad = True
         optimizer = optim.SGD(
             filter(lambda param: param.requires_grad, net.parameters()),
@@ -104,7 +112,10 @@ def train(args, train_loader, eval_loader):
         )
     else:
         optimizer = optim.SGD(
-            net.parameters(), lr=args.lr, momentum=args.momentum, nesterov=False
+            net.parameters(),
+            lr=args.lr,
+            momentum=args.momentum,
+            nesterov=False,
         )
 
     scheduler = ReduceLROnPlateau(
@@ -129,8 +140,11 @@ def train(args, train_loader, eval_loader):
     step = 0
     config["eval_period"] = len(train_loader.dataset) // args.batch_size
     config["verbose_period"] = config["eval_period"] // 5
+
+    train_start_time = time.time()
     for iteration in range(
-        args.resume + 1, args.max_epoch * len(train_loader.dataset) // args.batch_size
+        args.resume + 1,
+        args.max_epoch * len(train_loader.dataset) // args.batch_size,
     ):
         t0 = time.time()
         try:
@@ -152,9 +166,13 @@ def train(args, train_loader, eval_loader):
         sounds = sounds.permute(0, 3, 1, 2).float()
 
         if torch.cuda.is_available():
-            one_hot = torch.cuda.FloatTensor(type_ids.shape[0], config["num_classes"])
+            one_hot = torch.cuda.FloatTensor(
+                type_ids.shape[0], config["num_classes"]
+            )
         else:
-            one_hot = torch.FloatTensor(type_ids.shape[0], config["num_classes"])
+            one_hot = torch.FloatTensor(
+                type_ids.shape[0], config["num_classes"]
+            )
         one_hot.fill_(3.33556e-4)
         one_hot.scatter_(1, type_ids.unsqueeze(1), 0.5)
 
@@ -194,15 +212,22 @@ def train(args, train_loader, eval_loader):
             sum_accuracy += accuracy
             step += 1
 
-        warmup_steps = config["verbose_period"] * 4
+        warmup_steps = config["verbose_period"]
         if iteration < warmup_steps:
             warmup_learning_rate(optimizer, iteration, warmup_steps)
 
-        if iteration % config["eval_period"] == 0 and iteration != 0 and step != 0:
-            loss, accuracy = evaluate(net, eval_loader)
+        if (
+            iteration % config["eval_period"] == 0
+            and iteration != 0
+            and step != 0
+        ):
+            with torch.no_grad():
+                loss, accuracy = evaluate(net, eval_loader)
+            hours = int(time.time() - train_start_time) // 3600
+            now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
             print(
-                "Eval accuracy:{} | Train accuracy:{}".format(
-                    accuracy, sum_accuracy / step
+                "[{}] [{}] Eval accuracy:{:6f} | Train accuracy:{:6f}".format(
+                    now, hours, accuracy, sum_accuracy / step
                 ),
                 flush=True,
             )
@@ -229,17 +254,31 @@ if __name__ == "__main__":
         "--batch_size", default=64, type=int, help="Batch size for training"
     )
     parser.add_argument(
-        "--max_epoch", default=100, type=int, help="Maximum epoches for training"
+        "--max_epoch",
+        default=100,
+        type=int,
+        help="Maximum epoches for training",
     )
     parser.add_argument(
-        "--dataset_root", default="/media/data2/sanbai/mfcc_sound", type=str, help="Root path of data"
+        "--dataset_root",
+        default="/media/data2/song/V1.training/",
+        type=str,
+        help="Root path of data",
     )
-    parser.add_argument("--lr", default=0.1, type=float, help="Initial learning rate")
     parser.add_argument(
-        "--momentum", default=0.9, type=float, help="Momentum value for optimizer"
+        "--lr", default=0.1, type=float, help="Initial learning rate"
     )
     parser.add_argument(
-        "--resume", default=0, type=int, help="Checkpoint steps to resume training from"
+        "--momentum",
+        default=0.9,
+        type=float,
+        help="Momentum value for optimizer",
+    )
+    parser.add_argument(
+        "--resume",
+        default=0,
+        type=int,
+        help="Checkpoint steps to resume training from",
     )
     parser.add_argument(
         "--finetune",
@@ -248,12 +287,18 @@ if __name__ == "__main__":
         help="Finetune model by using all categories",
     )
     parser.add_argument(
-        "--fp16", default=False, type=bool, help="Use float16 precision to train"
+        "--fp16",
+        default=False,
+        type=bool,
+        help="Use float16 precision to train",
     )
     args = parser.parse_args()
 
     t0 = time.time()
-    list_loader = ListLoader(args.dataset_root, config["num_classes"], args.finetune)
+    list_loader = ListLoader(
+        args.dataset_root, config["num_classes"], args.finetune
+    )
+    list_loader.export_labelmap()
     sound_list, train_indices, eval_indices = list_loader.sound_indices()
 
     train_set = BirdsDataset(sound_list, train_indices)
