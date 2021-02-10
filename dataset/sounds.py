@@ -3,10 +3,11 @@ import numpy as np
 
 import torch.utils.data as data
 
+from random import shuffle
 from collections import Counter
 
 SEED = 20200729
-EVAL_RATIO = 0.1
+EVAL_RATIO = 0.2
 
 
 class ListLoader(object):
@@ -62,6 +63,9 @@ class ListLoader(object):
                             break
                     if enough:
                         break
+
+        shuffle(self.sound_list)
+        shuffle(self.sound_list)
 
         avg_count = sum(self.category_count.values()) / len(
             self.category_count

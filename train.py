@@ -75,8 +75,8 @@ def train(args, train_loader, eval_loader):
     cfg.MODEL.TYPE = "regnet"
     cfg.REGNET.DEPTH = 20
     cfg.REGNET.SE_ON = False
-    cfg.REGNET.W0 = 256
-    # cfg.BN.NUM_GROUPS = 8
+    cfg.REGNET.W0 = 32
+    cfg.BN.NUM_GROUPS = 8
     cfg.ANYNET.STEM_CHANNELS = 1
     cfg.MODEL.NUM_CLASSES = config["num_classes"]
     net = builders.build_model()
@@ -173,7 +173,7 @@ def train(args, train_loader, eval_loader):
             one_hot = torch.FloatTensor(
                 type_ids.shape[0], config["num_classes"]
             )
-        one_hot.fill_(3.33556e-4)
+        one_hot.fill_(0.5 / (config["num_classes"] - 1))
         one_hot.scatter_(1, type_ids.unsqueeze(1), 0.5)
 
         # augmentation
