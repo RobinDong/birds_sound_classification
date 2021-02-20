@@ -11,7 +11,7 @@ EVAL_RATIO = 0.2
 
 
 class ListLoader(object):
-    def __init__(self, root_path, num_classes, finetune=False):
+    def __init__(self, root_path, num_classes):
         np.random.seed(SEED)
 
         self.category_count = Counter()  # number of files for each category
@@ -22,24 +22,19 @@ class ListLoader(object):
             for dir_name in directory[1]:  # All subdirectories
                 pos = dir_name.find(".")
                 type_id = int(dir_name[0:pos])
-                type_name = dir_name[pos+1:]
+                type_name = dir_name[pos + 1:]
                 if type_id < 0 or type_id >= num_classes:
                     print("Wrong directory: {}!".format(dir_name))
                     continue
                 self.labelmap[type_id] = type_name
                 for file in os.listdir(os.path.join(root_path, dir_name)):
-                    if file.endswith("npy"):
+                    if file.endswith("A_full.npy"):
                         self.category_count[type_id] += 1
-
-                if not finetune and self.category_count[type_id] < 20:
-                    continue
 
                 dir_count += 1
 
-                enough = False
-                count = 0
                 for file in os.listdir(os.path.join(root_path, dir_name)):
-                    if not file.endswith("npy"):
+                    if not file.endswith("A_full.npy"):
                         continue
                     full_path = os.path.join(root_path, dir_name, file)
 
@@ -57,12 +52,6 @@ class ListLoader(object):
                         self.sound_list.append(
                             (full_path, begin, end, type_id)
                         )
-                        count += 1
-                        if count > 50:
-                            enough = True
-                            break
-                    if enough:
-                        break
 
         shuffle(self.sound_list)
         shuffle(self.sound_list)
@@ -99,11 +88,34 @@ class ListLoader(object):
 class BirdsDataset(data.Dataset):
     """ All sounds and classes for birds through the world """
 
-    def __init__(self, sound_list, sound_indices):
+    def __init__(self, sound_list, sound_indices, train=True, finetune=False):
         self.sound_list = sound_list
         self.sound_indices = sound_indices
+        self._train = train
+        self._finetune = finetune
+        # Create category map so we can uniformly
+        # pick up samples from different categorys.
+        self._category_map = {}
+        for index in range(len(self.sound_indices)):
+            full_path, begin, end, type_id = self.sound_list[
+                self.sound_indices[index]
+            ]
+            if type_id in self._category_map:
+                self._category_map[type_id].append(index)
+            else:
+                new_list = [index]
+                self._category_map[type_id] = new_list
+        self._category_list = list(self._category_map.keys())
 
     def __getitem__(self, index):
+        if self._finetune and self._train:
+            # Rotately choose a category
+            idx = index % len(self._category_list)
+            lst = self._category_map[self._category_list[idx]]
+            # Randomly choose a index in this category
+            ind = np.random.randint(0, len(lst))
+            index = lst[ind]
+
         full_path, begin, end, type_id = self.sound_list[
             self.sound_indices[index]
         ]
