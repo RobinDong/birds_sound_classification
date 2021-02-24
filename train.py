@@ -19,8 +19,8 @@ from dataset.sounds import BirdsDataset, ListLoader
 
 
 config = {
-    "num_classes": 10950,
-    "num_workers": 3,
+    "num_classes": 10958,
+    "num_workers": 2,
     "save_folder": "ckpt/",
     "ckpt_name": "bird_cls",
 }
@@ -75,8 +75,7 @@ def train(args, train_loader, eval_loader):
     cfg.MODEL.TYPE = "regnet"
     cfg.REGNET.DEPTH = 20
     cfg.REGNET.SE_ON = False
-    cfg.REGNET.W0 = 32
-    cfg.BN.NUM_GROUPS = 8
+    cfg.REGNET.W0 = 128
     cfg.ANYNET.STEM_CHANNELS = 1
     cfg.MODEL.NUM_CLASSES = config["num_classes"]
     net = builders.build_model()
@@ -100,7 +99,7 @@ def train(args, train_loader, eval_loader):
         for param in net.parameters():
             param.requires_grad = False
         # Unfreeze some layers
-        for layer in [net.s1.b18, net.s1.b19, net.s1.b20]:
+        for layer in [net.s2.b10, net.s2.b11, net.s2.b12]:
             for param in layer.parameters():
                 param.requies_grad = True
         net.head.fc.weight.requires_grad = True
@@ -177,8 +176,7 @@ def train(args, train_loader, eval_loader):
         one_hot.scatter_(1, type_ids.unsqueeze(1), 0.5)
 
         # augmentation
-        if not args.finetune:
-            sounds = aug(sounds)
+        sounds = aug(sounds)
         # forward
         out = net(sounds)
 
@@ -261,7 +259,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--dataset_root",
-        default="/media/data2/song/V1.training/",
+        default="/media/data2/song/V2.training/",
         type=str,
         help="Root path of data",
     )
@@ -296,13 +294,13 @@ if __name__ == "__main__":
 
     t0 = time.time()
     list_loader = ListLoader(
-        args.dataset_root, config["num_classes"], args.finetune
+        args.dataset_root, config["num_classes"]
     )
     list_loader.export_labelmap()
     sound_list, train_indices, eval_indices = list_loader.sound_indices()
 
-    train_set = BirdsDataset(sound_list, train_indices)
-    eval_set = BirdsDataset(sound_list, eval_indices)
+    train_set = BirdsDataset(sound_list, train_indices, True, args.finetune)
+    eval_set = BirdsDataset(sound_list, eval_indices, False)
     print("train set: {} eval set: {}".format(len(train_set), len(eval_set)))
 
     train_loader = data.DataLoader(

@@ -29,10 +29,9 @@ def predict(args):
     cfg.MODEL.TYPE = "regnet"
     cfg.REGNET.DEPTH = 20
     cfg.REGNET.SE_ON = False
-    cfg.REGNET.W0 = 32
-    cfg.BN.NUM_GROUPS = 8
+    cfg.REGNET.W0 = 128
     cfg.ANYNET.STEM_CHANNELS = 1
-    cfg.MODEL.NUM_CLASSES = 10950
+    cfg.MODEL.NUM_CLASSES = 10958
     net = builders.build_model()
     net.load_state_dict(torch.load(args.classify_model, map_location="cpu"))
     net.eval()
