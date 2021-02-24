@@ -1,9 +1,9 @@
 import os
+import cv2
 import numpy as np
 
 import torch.utils.data as data
 
-from random import shuffle
 from collections import Counter
 
 SEED = 20200729
@@ -53,8 +53,9 @@ class ListLoader(object):
                             (full_path, begin, end, type_id)
                         )
 
-        shuffle(self.sound_list)
-        shuffle(self.sound_list)
+        np.random.shuffle(self.sound_list)
+        np.random.shuffle(self.sound_list)
+        print("sound_list:", self.sound_list[:10])
 
         avg_count = sum(self.category_count.values()) / len(
             self.category_count
@@ -107,6 +108,55 @@ class BirdsDataset(data.Dataset):
                 self._category_map[type_id] = new_list
         self._category_list = list(self._category_map.keys())
 
+    def _inflight_aug(self, sample):
+        dice = np.random.randint(5)
+        if dice == 0:
+            return sample
+
+        height = sample.shape[0]
+        width = sample.shape[1]
+
+        if dice == 1:
+            # Time masking
+            time_slot = np.random.randint(width // 10)
+            time_begin = np.random.randint(0, width - time_slot)
+            sample[:, time_begin: time_begin + time_slot] = sample.min()
+            # Frequency masking
+            freq_slot = np.random.randint(height // 10)
+            freq_begin = np.random.randint(0, height - freq_slot)
+            sample[freq_begin: freq_begin + freq_slot, :] = sample.min()
+            return sample
+
+        if dice == 2:
+            # Time warping
+            time_slot = np.random.randint(width // 10)
+            if np.random.randint(2):  # From head
+                sample = sample[:, time_slot:]
+            else:  # From tail
+                sample = sample[:, : width - time_slot]
+            sample = cv2.resize(sample, (width, height))
+            return sample
+
+        if dice == 3:
+            # Frequency warping
+            freq_slot = np.random.randint(height // 10)
+            if np.random.randint(2):  # From head
+                sample = sample[freq_slot:, :]
+            else:  # From tail
+                sample = sample[: height - freq_slot, :]
+            sample = cv2.resize(sample, (width, height))
+            return sample
+
+        if dice == 4:
+            # Change loundness
+            if np.random.randint(2):
+                sample = sample * 1.05
+            else:
+                sample = sample * 0.95
+            return sample
+
+        return sample
+
     def __getitem__(self, index):
         if self._finetune and self._train:
             # Rotately choose a category
@@ -121,6 +171,8 @@ class BirdsDataset(data.Dataset):
         ]
         audio = np.load(full_path)
         sample = audio[:, begin:end].copy()
+        if self._train:
+            sample = self._inflight_aug(sample)
         return sample, int(type_id)
 
     def __len__(self):
