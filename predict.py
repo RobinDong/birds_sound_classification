@@ -9,10 +9,6 @@ from pycls.core.config import cfg
 
 from utils import augment
 
-PERIOD = 5  # seconds
-SHIFT_LEN = 20  # micro-seconds
-PERIOD_LEN = int(PERIOD * 1000 / SHIFT_LEN)
-
 
 def load_label_file():
     map = {}
@@ -60,29 +56,6 @@ def predict(args):
             ind = ind.item()
             # if ind > 0 and ind < 10950:
             print(ind, label_map[ind], f"({val.item()*100:.2f}%)")
-
-    """softmax = nn.Softmax(dim=1)
-
-    sr, audio = wavfile.read(args.sound_file)
-    output = mfcc.mfcc(sr, audio)
-
-    result = torch.from_numpy(np.zeros((1, cfg.MODEL.NUM_CLASSES), np.float32))
-    # Split sound to a few pieces and predict them one by one, then add up the results
-    for index in range(output.shape[0] // PERIOD_LEN):
-        out = output[index * PERIOD_LEN : (index + 1) * PERIOD_LEN, :]
-        tensor_sound = torch.from_numpy(out)
-        result += net(
-            tensor_sound.unsqueeze(0).unsqueeze(3).permute(0, 3, 1, 2).float()
-        )
-    result = softmax(result)
-    print("result:", result, result.shape)
-    values, indices = torch.topk(result, 10)
-
-    print(values, indices)
-    for ind, val in zip(indices[0], values[0]):
-        ind = ind.item()
-        if ind > 0 and ind < 1500:
-            print(ind, label_map[ind], f"({val.item()*100:.2f}%)")"""
 
 
 if __name__ == "__main__":
