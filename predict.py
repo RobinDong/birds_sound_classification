@@ -1,3 +1,4 @@
+import cv2
 import argparse
 import numpy as np
 
@@ -44,7 +45,9 @@ def predict(args):
         if (end - begin) != 78:
             print("Wrong format")
             continue
-        sample = torch.from_numpy(audio[:, begin:end].copy())
+        sample = audio[:, begin:end].copy()
+        sample = cv2.resize(sample, (78, 1250 // 5 // 2))
+        sample = torch.from_numpy(sample)
         sample = sample.unsqueeze(0).unsqueeze(3)
         sample = aug(sample)
         sample = sample.permute(0, 3, 1, 2).float()

@@ -114,6 +114,14 @@ class BirdsDataset(data.Dataset):
                 fp.write(str(self.sound_list[ind]) + "\n")
 
     def _inflight_aug(self, sample):
+        # First dice throwing
+        dice = np.random.randint(3)
+        if dice == 1:
+            sample = cv2.blur(sample, (3, 3))
+        elif dice == 2:
+            sample = cv2.blur(sample, (5, 5))
+
+        # Second dice throwing
         dice = np.random.randint(5)
         if dice == 0:
             return sample
@@ -176,7 +184,7 @@ class BirdsDataset(data.Dataset):
         ]
         audio = np.load(full_path, mmap_mode="r")
         sample = audio[:, begin:end].copy()
-        sample = cv2.resize(sample, (78, 1250 // 5))
+        sample = cv2.resize(sample, (78, 1250 // 5 // 2))
         if self._train:
             sample = self._inflight_aug(sample)
         return sample, int(type_id)

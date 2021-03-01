@@ -41,6 +41,8 @@ def evaluate(net, eval_loader):
     total_loss = 0.0
     batch_iterator = iter(eval_loader)
     sum_accuracy = 0.0
+    sum_correct = 0
+    eval_samples = 0
     aug = augment.Augment(dropout=False).cuda()
     for iteration in range(len(eval_loader)):
         sounds, type_ids = next(batch_iterator)
@@ -54,12 +56,16 @@ def evaluate(net, eval_loader):
         out = net(sounds.permute(0, 3, 1, 2).float())
         # accuracy
         _, predict = torch.max(out, 1)
-        correct = predict == type_ids
+        correct = (predict == type_ids)
         sum_accuracy += correct.sum().item() / correct.size()[0]
+        sum_correct += correct.sum().item()
+        eval_samples += sounds.shape[0]
         # loss
         loss = F.cross_entropy(out, type_ids)
         total_loss += loss.item()
-    return total_loss / iteration, sum_accuracy / iteration
+    print("sum_correct:", sum_correct, eval_samples)
+    print("sum_accuracy:", sum_accuracy, iteration)
+    return total_loss / iteration, sum_correct / eval_samples
 
 
 def warmup_learning_rate(optimizer, steps, warmup_steps):
@@ -302,6 +308,7 @@ if __name__ == "__main__":
     train_set = BirdsDataset(sound_list, train_indices, True, args.finetune)
     eval_set = BirdsDataset(sound_list, eval_indices, False)
     print("train set: {} eval set: {}".format(len(train_set), len(eval_set)))
+    eval_set.export_samples()
 
     train_loader = data.DataLoader(
         train_set,
