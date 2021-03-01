@@ -108,6 +108,11 @@ class BirdsDataset(data.Dataset):
                 self._category_map[type_id] = new_list
         self._category_list = list(self._category_map.keys())
 
+    def export_samples(self, path="eval_list.txt"):
+        with open(path, "w") as fp:
+            for ind in self.sound_indices:
+                fp.write(str(self.sound_list[ind]) + "\n")
+
     def _inflight_aug(self, sample):
         dice = np.random.randint(5)
         if dice == 0:
@@ -169,8 +174,9 @@ class BirdsDataset(data.Dataset):
         full_path, begin, end, type_id = self.sound_list[
             self.sound_indices[index]
         ]
-        audio = np.load(full_path)
+        audio = np.load(full_path, mmap_mode="r")
         sample = audio[:, begin:end].copy()
+        sample = cv2.resize(sample, (78, 1250 // 5))
         if self._train:
             sample = self._inflight_aug(sample)
         return sample, int(type_id)
