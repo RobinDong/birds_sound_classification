@@ -8,6 +8,7 @@ from collections import Counter
 
 SEED = 20200729
 EVAL_RATIO = 0.2
+FILE_PATTERN = ".npy"
 
 
 class ListLoader(object):
@@ -28,13 +29,13 @@ class ListLoader(object):
                     continue
                 self.labelmap[type_id] = type_name
                 for file in os.listdir(os.path.join(root_path, dir_name)):
-                    if file.endswith("A_full.npy"):
+                    if file.endswith(FILE_PATTERN):
                         self.category_count[type_id] += 1
 
                 dir_count += 1
 
                 for file in os.listdir(os.path.join(root_path, dir_name)):
-                    if not file.endswith("A_full.npy"):
+                    if not file.endswith(FILE_PATTERN):
                         continue
                     full_path = os.path.join(root_path, dir_name, file)
 
