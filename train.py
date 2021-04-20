@@ -43,7 +43,7 @@ def evaluate(net, eval_loader):
     sum_accuracy = 0.0
     sum_correct = 0
     eval_samples = 0
-    aug = augment.Augment(dropout=False).cuda()
+    aug = augment.Augment(training=False).cuda()
     for iteration in range(len(eval_loader)):
         sounds, type_ids = next(batch_iterator)
         if torch.cuda.is_available():
@@ -79,9 +79,13 @@ def warmup_learning_rate(optimizer, steps, warmup_steps):
 
 def train(args, train_loader, eval_loader):
     cfg.MODEL.TYPE = "regnet"
-    cfg.REGNET.DEPTH = 20
+    cfg.REGNET.DEPTH = 25
     cfg.REGNET.SE_ON = False
-    cfg.REGNET.W0 = 128
+    cfg.REGNET.W0 = 112
+    cfg.REGNET.WA = 33.22
+    cfg.REGNET.WM = 2.27
+    cfg.REGNET.GROUP_W = 72
+    cfg.BN.NUM_GROUPS = 4
     cfg.ANYNET.STEM_CHANNELS = 1
     cfg.MODEL.NUM_CLASSES = config["num_classes"]
     net = builders.build_model()
@@ -206,7 +210,7 @@ def train(args, train_loader, eval_loader):
         if iteration % config["verbose_period"] == 0:
             # accuracy
             _, predict = torch.max(out, 1)
-            correct = predict == type_ids
+            correct = (predict == type_ids)
             accuracy = correct.sum().item() / correct.size()[0]
             print(
                 "iter: %d loss: %.4f | acc: %.4f | time: %.4f sec."
@@ -265,7 +269,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--dataset_root",
-        default="/media/data2/song/V2.training/",
+        default="/media/data2/song/V5.npy",
         type=str,
         help="Root path of data",
     )
@@ -314,6 +318,7 @@ if __name__ == "__main__":
         train_set,
         args.batch_size,
         num_workers=config["num_workers"],
+        worker_init_fn=BirdsDataset.worker_init_fn,
         shuffle=True,
         pin_memory=True,
         collate_fn=BirdsDataset.my_collate,

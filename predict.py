@@ -1,4 +1,4 @@
-import cv2
+import librosa
 import argparse
 import numpy as np
 
@@ -9,6 +9,11 @@ import pycls.core.builders as builders
 from pycls.core.config import cfg
 
 from utils import augment
+
+from dataset.generate import CFG
+
+SEGMENT_SIZE = 312
+sample_rate = 32000
 
 
 def load_label_file():
@@ -24,9 +29,13 @@ def load_label_file():
 
 def predict(args):
     cfg.MODEL.TYPE = "regnet"
-    cfg.REGNET.DEPTH = 20
+    cfg.REGNET.DEPTH = 25
     cfg.REGNET.SE_ON = False
-    cfg.REGNET.W0 = 128
+    cfg.REGNET.W0 = 112
+    cfg.REGNET.WA = 33.22
+    cfg.REGNET.WM = 2.27
+    cfg.REGNET.GROUP_W = 72
+    cfg.BN.NUM_GROUPS = 4
     cfg.ANYNET.STEM_CHANNELS = 1
     cfg.MODEL.NUM_CLASSES = 10958
     net = builders.build_model()
@@ -36,17 +45,20 @@ def predict(args):
     softmax = nn.Softmax(dim=1)
     label_map = load_label_file()
 
-    audio = np.load(args.sound_file)
-    aug = augment.Augment(dropout=False)
-    seg_files = args.sound_file + ".segments"
-    with open(seg_files, "r") as fp:
-        splits = eval(fp.read())
-    for begin, end in splits:
-        if (end - begin) != 78:
-            print("Wrong format")
+    # Load audio file to np.array
+    audio, sr = librosa.load(args.sound_file, mono=True, offset=1.1, sr=CFG.sample_rate)
+    logmel = librosa.feature.melspectrogram(audio, sr, n_mels=CFG.n_mels, fmax=CFG.fmax)
+    S_dB = librosa.power_to_db(logmel, ref=np.max)
+
+    aug = augment.Augment(training=False)
+    segs = S_dB.shape[1] // SEGMENT_SIZE
+    for index in range(segs):
+        begin = index * SEGMENT_SIZE
+        end = begin + SEGMENT_SIZE
+        if end > S_dB.shape[1]:
+            print(f"{end} is out of range {S_dB.shape[1]} [{args.sound_file}]")
             continue
-        sample = audio[:, begin:end].copy()
-        sample = cv2.resize(sample, (78, 1250 // 5 // 2))
+        sample = S_dB[:, begin:end].copy()
         sample = torch.from_numpy(sample)
         sample = sample.unsqueeze(0).unsqueeze(3)
         sample = aug(sample)

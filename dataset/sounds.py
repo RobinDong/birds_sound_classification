@@ -9,6 +9,8 @@ from collections import Counter
 SEED = 20200729
 EVAL_RATIO = 0.2
 FILE_PATTERN = ".npy"
+SEGMENT_SIZE = 312
+MAX_SIZE = int(600 // 5 * SEGMENT_SIZE)  # 10 mins
 
 
 class ListLoader(object):
@@ -39,16 +41,14 @@ class ListLoader(object):
                         continue
                     full_path = os.path.join(root_path, dir_name, file)
 
-                    # Find corresponding segments file
-                    seg_files = os.path.join(
-                        root_path, dir_name, file + ".segments"
-                    )
-                    splits = []
-                    with open(seg_files, "r") as fp:
-                        splits = eval(fp.read())
-                    for begin, end in splits:
-                        if (end - begin) != 78:
-                            print(f"The part range is not 78. [{seg_files}]")
+                    audio = np.load(full_path, mmap_mode="r")
+                    audio_len = min(MAX_SIZE, audio.shape[1])
+                    segs = audio_len // SEGMENT_SIZE
+                    for index in range(segs):
+                        begin = index * SEGMENT_SIZE
+                        end = begin + SEGMENT_SIZE
+                        if end > audio_len:
+                            print(f"{end} is out of range {audio_len} [{full_path}]")
                             continue
                         self.sound_list.append(
                             (full_path, begin, end, type_id)
@@ -130,20 +130,21 @@ class BirdsDataset(data.Dataset):
         height = sample.shape[0]
         width = sample.shape[1]
 
+        cut_ratio = 5
         if dice == 1:
             # Time masking
-            time_slot = np.random.randint(width // 10)
+            time_slot = np.random.randint(width // cut_ratio)
             time_begin = np.random.randint(0, width - time_slot)
             sample[:, time_begin: time_begin + time_slot] = sample.min()
             # Frequency masking
-            freq_slot = np.random.randint(height // 10)
+            freq_slot = np.random.randint(height // cut_ratio)
             freq_begin = np.random.randint(0, height - freq_slot)
             sample[freq_begin: freq_begin + freq_slot, :] = sample.min()
             return sample
 
         if dice == 2:
             # Time warping
-            time_slot = np.random.randint(width // 10)
+            time_slot = np.random.randint(width // cut_ratio)
             if np.random.randint(2):  # From head
                 sample = sample[:, time_slot:]
             else:  # From tail
@@ -153,7 +154,7 @@ class BirdsDataset(data.Dataset):
 
         if dice == 3:
             # Frequency warping
-            freq_slot = np.random.randint(height // 10)
+            freq_slot = np.random.randint(height // cut_ratio)
             if np.random.randint(2):  # From head
                 sample = sample[freq_slot:, :]
             else:  # From tail
@@ -164,9 +165,9 @@ class BirdsDataset(data.Dataset):
         if dice == 4:
             # Change loundness
             if np.random.randint(2):
-                sample = sample * 1.05
+                sample = sample * 1.10
             else:
-                sample = sample * 0.95
+                sample = sample * 0.90
             return sample
 
         return sample
@@ -185,7 +186,6 @@ class BirdsDataset(data.Dataset):
         ]
         audio = np.load(full_path, mmap_mode="r")
         sample = audio[:, begin:end].copy()
-        sample = cv2.resize(sample, (78, 1250 // 5 // 2))
         if self._train:
             sample = self._inflight_aug(sample)
         return sample, int(type_id)
@@ -197,6 +197,10 @@ class BirdsDataset(data.Dataset):
     def my_collate(batch):
         batch = filter(lambda sound: sound is not None, batch)
         return data.dataloader.default_collate(list(batch))
+
+    @staticmethod
+    def worker_init_fn(worker_id):
+        np.random.seed(SEED + worker_id)
 
 
 if __name__ == "__main__":
