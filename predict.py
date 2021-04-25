@@ -37,7 +37,7 @@ def predict(args):
     cfg.REGNET.GROUP_W = 72
     cfg.BN.NUM_GROUPS = 4
     cfg.ANYNET.STEM_CHANNELS = 1
-    cfg.MODEL.NUM_CLASSES = 10958
+    cfg.MODEL.NUM_CLASSES = 400
     net = builders.build_model()
     net.load_state_dict(torch.load(args.classify_model, map_location="cpu"))
     net.eval()

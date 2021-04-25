@@ -19,10 +19,10 @@ from dataset.sounds import BirdsDataset, ListLoader
 
 
 config = {
-    "num_classes": 10958,
-    "num_workers": 2,
+    "num_classes": 400,
+    "num_workers": 3,
     "save_folder": "ckpt/",
-    "ckpt_name": "bird_cls",
+    "ckpt_name": "bird2021",
 }
 
 
@@ -320,7 +320,7 @@ if __name__ == "__main__":
         num_workers=config["num_workers"],
         worker_init_fn=BirdsDataset.worker_init_fn,
         shuffle=True,
-        pin_memory=True,
+        pin_memory=False,
         collate_fn=BirdsDataset.my_collate,
     )
     eval_loader = data.DataLoader(
@@ -328,7 +328,7 @@ if __name__ == "__main__":
         args.batch_size,
         num_workers=config["num_workers"],
         shuffle=False,
-        pin_memory=True,
+        pin_memory=False,
         collate_fn=BirdsDataset.my_collate,
     )
     t1 = time.time()

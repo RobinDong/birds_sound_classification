@@ -7,7 +7,7 @@ import torch.utils.data as data
 from collections import Counter
 
 SEED = 20200729
-EVAL_RATIO = 0.2
+EVAL_RATIO = 0.1
 FILE_PATTERN = ".npy"
 SEGMENT_SIZE = 312
 MAX_SIZE = int(600 // 5 * SEGMENT_SIZE)  # 10 mins
@@ -20,16 +20,13 @@ class ListLoader(object):
         self.category_count = Counter()  # number of files for each category
         self.sound_list = []
         self.labelmap = {}
+        type_id = 0
         dir_count = 0
         for directory in os.walk(root_path):
             for dir_name in directory[1]:  # All subdirectories
-                pos = dir_name.find(".")
-                type_id = int(dir_name[0:pos])
-                type_name = dir_name[pos + 1:]
-                if type_id < 0 or type_id >= num_classes:
-                    print("Wrong directory: {}!".format(dir_name))
-                    continue
-                self.labelmap[type_id] = type_name
+                if dir_name not in self.labelmap:
+                    type_id += 1
+                    self.labelmap[type_id] = dir_name
                 for file in os.listdir(os.path.join(root_path, dir_name)):
                     if file.endswith(FILE_PATTERN):
                         self.category_count[type_id] += 1
@@ -204,7 +201,7 @@ class BirdsDataset(data.Dataset):
 
 
 if __name__ == "__main__":
-    list_loader = ListLoader("V1", 100)
+    list_loader = ListLoader("/media/data2/sanbai/bird2021.npy/", 100)
     sound_list, train_lst, eval_lst = list_loader.sound_indices()
     print("train_lst", train_lst, len(train_lst))
     print("eval_lst", eval_lst, len(eval_lst))

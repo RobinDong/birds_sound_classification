@@ -43,20 +43,12 @@ class Generator:
         task_list = []
         for directory in os.walk(src_dir):
             for dir_name in directory[1]:  # All subdirectories
-                pos = dir_name.find(".")
-                if pos < 0:
-                    print("Wrong directory: {}!".format(dir_name))
-                    continue
-                type_id = int(dir_name[0:pos])
-                if type_id < 0 or type_id >= num_classes:
-                    print("Wrong directory: {}!".format(dir_name))
-                    continue
                 # create directory in destination
                 pathlib.Path(
                     os.path.join(dest_dir, dir_name)
                 ).mkdir(parents=True, exist_ok=True)
                 for file in os.listdir(os.path.join(src_dir, dir_name)):
-                    if file.endswith(".mp3"):
+                    if file.endswith(".ogg"):
                         full_path = os.path.join(src_dir, dir_name, file)
                         new_full_path = os.path.join(
                             dest_dir,
@@ -70,4 +62,4 @@ class Generator:
 
 if __name__ == "__main__":
     generator = Generator()
-    generator.generate("/media/data2/sanbai/V3.Done/", "/media/data2/sanbai/V3.npy/", 10958)
+    generator.generate("/media/data2/sanbai/bird2021/train_short_audio/", "/media/data2/sanbai/bird2021.npy/", 400)
