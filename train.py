@@ -109,7 +109,7 @@ def train(args, train_loader, eval_loader):
         for param in net.parameters():
             param.requires_grad = False
         # Unfreeze some layers
-        for layer in [net.s2.b10, net.s2.b11, net.s2.b12]:
+        for layer in [net.s4.b1, net.s4.b2]:
             for param in layer.parameters():
                 param.requies_grad = True
         net.head.fc.weight.requires_grad = True
@@ -131,7 +131,7 @@ def train(args, train_loader, eval_loader):
         optimizer,
         "max",
         factor=0.5,
-        patience=2,
+        patience=1,
         verbose=True,
         threshold=1e-3,
         threshold_mode="abs",

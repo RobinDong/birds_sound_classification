@@ -7,7 +7,7 @@ import torch.utils.data as data
 from collections import Counter
 
 SEED = 20200729
-EVAL_RATIO = 0.2
+EVAL_RATIO = 0.05
 FILE_PATTERN = ".npy"
 SEGMENT_SIZE = 312
 MAX_SIZE = int(600 // 5 * SEGMENT_SIZE)  # 10 mins

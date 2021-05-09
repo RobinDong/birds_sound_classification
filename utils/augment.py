@@ -13,7 +13,7 @@ class Augment(nn.Module):
         image = (image - image.mean()) / image.std()
         if self._training:
             gaussian_noise = torch.randn(image.shape, device='cuda')
-            image += gaussian_noise * (torch.rand(1, device='cuda') * 0.8 - 0.4)
+            image += gaussian_noise * (torch.rand(1, device='cuda') * 1.2 - 0.6)
         # if self._dropout:
         #    image = self.dropout(image)
         return image
