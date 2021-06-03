@@ -79,12 +79,13 @@ def warmup_learning_rate(optimizer, steps, warmup_steps):
 
 def train(args, train_loader, eval_loader):
     cfg.MODEL.TYPE = "regnet"
-    cfg.REGNET.DEPTH = 25
+    # RegNetY-3.2GF
+    cfg.REGNET.DEPTH = 21
     cfg.REGNET.SE_ON = False
-    cfg.REGNET.W0 = 112
-    cfg.REGNET.WA = 33.22
-    cfg.REGNET.WM = 2.27
-    cfg.REGNET.GROUP_W = 72
+    cfg.REGNET.W0 = 80
+    cfg.REGNET.WA = 42.63
+    cfg.REGNET.WM = 2.66
+    cfg.REGNET.GROUP_W = 24
     cfg.BN.NUM_GROUPS = 4
     cfg.ANYNET.STEM_CHANNELS = 1
     cfg.MODEL.NUM_CLASSES = config["num_classes"]
@@ -133,7 +134,7 @@ def train(args, train_loader, eval_loader):
         factor=0.5,
         patience=1,
         verbose=True,
-        threshold=1e-3,
+        threshold=5e-3,
         threshold_mode="abs",
     )
 
@@ -191,7 +192,7 @@ def train(args, train_loader, eval_loader):
         out = net(sounds)
 
         # backprop
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
         loss = torch.sum(-one_hot * F.log_softmax(out, -1), -1).mean()
         # loss = F.cross_entropy(out, type_ids)
 
@@ -234,7 +235,7 @@ def train(args, train_loader, eval_loader):
             hours = int(time.time() - train_start_time) // 3600
             now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
             print(
-                "[{}] [{}] Eval accuracy:{:6f} | Train accuracy:{:6f}".format(
+                "[{}] [{}] Eval accuracy:{:4f} | Train accuracy:{:4f}".format(
                     now, hours, accuracy, sum_accuracy / step
                 ),
                 flush=True,
@@ -269,7 +270,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--dataset_root",
-        default="/media/data2/song/V5.npy",
+        default="/media/data2/song/V6.npy",
         type=str,
         help="Root path of data",
     )

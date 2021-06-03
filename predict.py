@@ -46,9 +46,10 @@ def predict(args):
     label_map = load_label_file()
 
     # Load audio file to np.array
-    audio, sr = librosa.load(args.sound_file, mono=True, offset=1.1, sr=CFG.sample_rate)
-    logmel = librosa.feature.melspectrogram(audio, sr, n_mels=CFG.n_mels, fmax=CFG.fmax)
-    S_dB = librosa.power_to_db(logmel, ref=np.max)
+    #audio, sr = librosa.load(args.sound_file, mono=True, offset=1.1, sr=CFG.sample_rate)
+    #logmel = librosa.feature.melspectrogram(audio, sr, n_mels=CFG.n_mels, fmax=CFG.fmax)
+    #S_dB = librosa.power_to_db(logmel, ref=np.max)
+    S_dB = np.load(args.sound_file)
 
     aug = augment.Augment(training=False)
     segs = S_dB.shape[1] // SEGMENT_SIZE
