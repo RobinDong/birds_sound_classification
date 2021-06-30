@@ -52,8 +52,9 @@ def evaluate(net, eval_loader):
 
         # forward
         sounds = sounds.unsqueeze(3)
+        sounds = sounds.permute(0, 3, 1, 2).float()
         sounds = aug(sounds)
-        out = net(sounds.permute(0, 3, 1, 2).float())
+        out = net(sounds)
         # accuracy
         _, predict = torch.max(out, 1)
         correct = (predict == type_ids)
@@ -110,7 +111,7 @@ def train(args, train_loader, eval_loader):
         for param in net.parameters():
             param.requires_grad = False
         # Unfreeze some layers
-        for layer in [net.s4.b1, net.s4.b2]:
+        for layer in [net.s4.b1, net.s3.b13, net.s3.b12]:
             for param in layer.parameters():
                 param.requies_grad = True
         net.head.fc.weight.requires_grad = True
@@ -270,7 +271,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--dataset_root",
-        default="/media/data2/song/V6.npy",
+        default="/media/data2/song/V7.npy",
         type=str,
         help="Root path of data",
     )

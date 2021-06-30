@@ -29,12 +29,12 @@ def load_label_file():
 
 def predict(args):
     cfg.MODEL.TYPE = "regnet"
-    cfg.REGNET.DEPTH = 25
+    cfg.REGNET.DEPTH = 21
     cfg.REGNET.SE_ON = False
-    cfg.REGNET.W0 = 112
-    cfg.REGNET.WA = 33.22
-    cfg.REGNET.WM = 2.27
-    cfg.REGNET.GROUP_W = 72
+    cfg.REGNET.W0 = 80
+    cfg.REGNET.WA = 42.63
+    cfg.REGNET.WM = 2.66
+    cfg.REGNET.GROUP_W = 24
     cfg.BN.NUM_GROUPS = 4
     cfg.ANYNET.STEM_CHANNELS = 1
     cfg.MODEL.NUM_CLASSES = 10958
