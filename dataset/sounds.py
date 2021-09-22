@@ -19,7 +19,10 @@ class ListLoader(object):
         np.random.seed(SEED)
 
         self.category_count = Counter()  # number of files for each category
-        self.sound_list = []
+        self.train_sound_list = []
+        self.eval_sound_list = []
+        self.file_list = []  # don't get train/eval data from the same file
+        self.eval_files = set()
         self.labelmap = {}
         dir_count = 0
         for directory in os.walk(root_path):
@@ -33,12 +36,22 @@ class ListLoader(object):
                 self.labelmap[type_id] = type_name
                 for file in os.listdir(os.path.join(root_path, dir_name)):
                     if file.endswith(FILE_PATTERN) or file.endswith(JPEG_PATTERN):
+                        full_path = os.path.join(root_path, dir_name, file)
+                        self.file_list.append(full_path)
                         self.category_count[type_id] += 1
 
                 dir_count += 1
+                # Only leave eval files in eval_files
+                np.random.shuffle(self.file_list)
+                nr_files = len(self.file_list)
+                self.eval_files = {file for file in self.file_list[0:int(nr_files * EVAL_RATIO)]}
 
                 for file in os.listdir(os.path.join(root_path, dir_name)):
                     full_path = os.path.join(root_path, dir_name, file)
+                    if full_path in self.eval_files:
+                        sound_list = self.eval_sound_list
+                    else:
+                        sound_list = self.train_sound_list
 
                     if file.endswith(FILE_PATTERN):
                         audio = np.load(full_path, mmap_mode="r")
@@ -50,16 +63,13 @@ class ListLoader(object):
                             if end > audio_len:
                                 print(f"{end} is out of range {audio_len} [{full_path}]")
                                 continue
-                            self.sound_list.append(
+                            sound_list.append(
                                 (full_path, begin, end, type_id)
                             )
                     elif file.endswith(JPEG_PATTERN):
-                        self.sound_list.append((full_path, type_id))
+                        sound_list.append((full_path, type_id))
 
-        np.random.shuffle(self.sound_list)
-        np.random.shuffle(self.sound_list)
-        print("sound_list:", self.sound_list[:10])
-
+        np.random.shuffle(self.train_sound_list)
         avg_count = sum(self.category_count.values()) / len(
             self.category_count
         )
@@ -69,16 +79,12 @@ class ListLoader(object):
         print("Min count category:", self.category_count[minimum])
         maximum = max(self.category_count, key=self.category_count.get)
         print("Max count category:", self.category_count[maximum])
+        print("Train sounds:", len(self.train_sound_list))
+        print("Eval sounds:", len(self.eval_sound_list))
 
-    def sound_indices(self):
+    def sound_lists(self):
         """Return train/eval sound files' list"""
-        length = len(self.sound_list)
-        indices = np.random.permutation(length)
-        point = int(length * EVAL_RATIO)
-        eval_indices = indices[0:point]
-        train_indices = indices[point:]
-
-        return self.sound_list, train_indices, eval_indices
+        return self.train_sound_list, self.eval_sound_list
 
     def export_labelmap(self, path="labelmap.csv"):
         with open(path, "w") as fp:
@@ -92,19 +98,16 @@ class ListLoader(object):
 class BirdsDataset(data.Dataset):
     """ All sounds and classes for birds through the world """
 
-    def __init__(self, sound_list, sound_indices, train=True, finetune=False):
+    def __init__(self, sound_list, train=True, finetune=False):
         self.sound_list = sound_list
-        self.sound_indices = sound_indices
         self._train = train
         self._finetune = finetune
         # Create category map so we can uniformly
         # pick up samples from different categorys.
         self._category_map = {}
         if finetune and train:
-            for index in range(len(self.sound_indices)):
-                item = self.sound_list[
-                    self.sound_indices[index]
-                ]
+            for index in range(len(self.sound_list)):
+                item = self.sound_list[index]
                 if len(item) > 2:
                     full_path, begin, end, type_id = item
                 else:
@@ -118,16 +121,16 @@ class BirdsDataset(data.Dataset):
 
     def export_samples(self, path="eval_list.txt"):
         with open(path, "w") as fp:
-            for ind in self.sound_indices:
-                fp.write(str(self.sound_list[ind]) + "\n")
+            for index in range(len(self.sound_list)):
+                fp.write(str(self.sound_list[index]) + "\n")
 
     def _inflight_aug(self, sample):
         # First dice throwing
-        dice = np.random.randint(3)
+        '''dice = np.random.randint(3)
         if dice == 1:
             sample = cv2.blur(sample, (3, 3))
         elif dice == 2:
-            sample = cv2.blur(sample, (5, 5))
+            sample = cv2.blur(sample, (5, 5))'''
 
         # Second dice throwing
         dice = np.random.randint(5)
@@ -188,13 +191,28 @@ class BirdsDataset(data.Dataset):
             ind = np.random.randint(0, len(lst))
             index = lst[ind]
 
-        item = self.sound_list[
-            self.sound_indices[index]
-        ]
+        item = self.sound_list[index]
+
+        def get_nr_mins(array):
+            return np.count_nonzero(array <= -80.0) / np.size(array)
+
+        def normalize(array):
+            if array.std() == 0:
+                return None
+            return (array - array.mean()) / array.std()
+
         if len(item) > 2:
             full_path, begin, end, type_id = item
             audio = np.load(full_path, mmap_mode="r")
+            # temporary augmentation
             sample = audio[:, begin:end].copy()
+            '''sample = audio[32:, begin:end].copy()
+            if (sample.max() - sample.min()) < 0.1:  # If there isn't any useful information
+                return None
+            # redistribution of `black` background
+            while get_nr_mins(sample) < 0.5:
+                sample -= 0.1
+                sample = np.where(sample < -80.0, -80.0, sample)'''
             if self._train:
                 sample = self._inflight_aug(sample)
         else:
@@ -205,7 +223,7 @@ class BirdsDataset(data.Dataset):
         return sample, int(type_id)
 
     def __len__(self):
-        return len(self.sound_indices)
+        return len(self.sound_list)
 
     @staticmethod
     def my_collate(batch):
@@ -219,11 +237,11 @@ class BirdsDataset(data.Dataset):
 
 if __name__ == "__main__":
     list_loader = ListLoader("/media/data2/song/V7.npy/", 20000)
-    sound_list, train_lst, eval_lst = list_loader.sound_indices()
+    train_lst, eval_lst = list_loader.sound_lists()
     print("train_lst", train_lst, len(train_lst))
     print("eval_lst", eval_lst, len(eval_lst))
 
-    bd = BirdsDataset(sound_list, eval_lst)
+    bd = BirdsDataset(eval_lst)
     sound, type_id = bd[3]
     print("sound", sound.shape, sound)
     print("type_id", type_id, type(type_id))

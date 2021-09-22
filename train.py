@@ -1,6 +1,7 @@
 import time
 import datetime
 import argparse
+import numpy as np
 
 import torch
 import torch.optim as optim
@@ -78,15 +79,40 @@ def warmup_learning_rate(optimizer, steps, warmup_steps):
         param_group["lr"] = lr
 
 
+def mixup_data(x, y, alpha=1.0, use_cuda=True):
+    if alpha > 0:
+        lam = np.random.beta(alpha, alpha)
+    else:
+        lam = 1
+
+    batch_size = x.size()[0]
+    if use_cuda:
+        index = torch.randperm(batch_size).cuda()
+    else:
+        index = torch.randperm(batch_size)
+
+    mixed_x = lam * x + (1 - lam) * x[index, :]
+    y_a, y_b = y, y[index]
+    return mixed_x, y_a, y_b, lam
+
+
+def criterion(outputs, targets):
+    return torch.sum(-targets * F.log_softmax(outputs, -1), -1).mean()
+
+
+def mixup_criterion(pred, y_a, y_b, lam):
+    return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
+
+
 def train(args, train_loader, eval_loader):
     cfg.MODEL.TYPE = "regnet"
     # RegNetY-3.2GF
-    cfg.REGNET.DEPTH = 21
+    cfg.REGNET.DEPTH = 18
     cfg.REGNET.SE_ON = False
-    cfg.REGNET.W0 = 80
-    cfg.REGNET.WA = 42.63
-    cfg.REGNET.WM = 2.66
-    cfg.REGNET.GROUP_W = 24
+    cfg.REGNET.W0 = 200
+    cfg.REGNET.WA = 106.23
+    cfg.REGNET.WM = 2.48
+    cfg.REGNET.GROUP_W = 112
     cfg.BN.NUM_GROUPS = 4
     cfg.ANYNET.STEM_CHANNELS = 1
     cfg.MODEL.NUM_CLASSES = config["num_classes"]
@@ -189,12 +215,16 @@ def train(args, train_loader, eval_loader):
 
         # augmentation
         sounds = aug(sounds)
+
+        # 'sounds' is input and 'one_hot' is target
+        inputs, targets_a, targets_b, lam = mixup_data(sounds, one_hot)
         # forward
         out = net(sounds)
+        loss = mixup_criterion(out, targets_a, targets_b, lam)
 
         # backprop
         optimizer.zero_grad(set_to_none=True)
-        loss = torch.sum(-one_hot * F.log_softmax(out, -1), -1).mean()
+        # loss = torch.sum(-one_hot * F.log_softmax(out, -1), -1).mean()
         # loss = F.cross_entropy(out, type_ids)
 
         if args.fp16:
@@ -309,11 +339,12 @@ if __name__ == "__main__":
         args.dataset_root, config["num_classes"]
     )
     list_loader.export_labelmap()
-    sound_list, train_indices, eval_indices = list_loader.sound_indices()
+    train_list, eval_list = list_loader.sound_lists()
 
-    train_set = BirdsDataset(sound_list, train_indices, True, args.finetune)
-    eval_set = BirdsDataset(sound_list, eval_indices, False)
+    train_set = BirdsDataset(train_list, True, args.finetune)
+    eval_set = BirdsDataset(eval_list, False)
     print("train set: {} eval set: {}".format(len(train_set), len(eval_set)))
+    train_set.export_samples("train_list.txt")
     eval_set.export_samples()
 
     train_loader = data.DataLoader(
