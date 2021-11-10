@@ -219,7 +219,7 @@ def train(args, train_loader, eval_loader):
         # 'sounds' is input and 'one_hot' is target
         inputs, targets_a, targets_b, lam = mixup_data(sounds, one_hot)
         # forward
-        out = net(sounds)
+        out = net(inputs)
         loss = mixup_criterion(out, targets_a, targets_b, lam)
 
         # backprop
