@@ -101,12 +101,12 @@ def criterion(outputs, targets):
 
 
 def mixup_criterion(pred, y_a, y_b, lam):
-    return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
+    return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b), lam * y_a + (1 - lam) * y_b
 
 
 def train(args, train_loader, eval_loader):
     cfg.MODEL.TYPE = "regnet"
-    # RegNetY-3.2GF
+    # RegNetY-16GF
     cfg.REGNET.DEPTH = 18
     cfg.REGNET.SE_ON = False
     cfg.REGNET.W0 = 200
@@ -220,7 +220,7 @@ def train(args, train_loader, eval_loader):
         inputs, targets_a, targets_b, lam = mixup_data(sounds, one_hot)
         # forward
         out = net(inputs)
-        loss = mixup_criterion(out, targets_a, targets_b, lam)
+        loss, out_mixup = mixup_criterion(out, targets_a, targets_b, lam)
 
         # backprop
         optimizer.zero_grad(set_to_none=True)
@@ -242,7 +242,8 @@ def train(args, train_loader, eval_loader):
         if iteration % config["verbose_period"] == 0:
             # accuracy
             _, predict = torch.max(out, 1)
-            correct = (predict == type_ids)
+            _, should = torch.max(out_mixup, 1)
+            correct = (predict == should)
             accuracy = correct.sum().item() / correct.size()[0]
             print(
                 "iter: %d loss: %.4f | acc: %.4f | time: %.4f sec."
