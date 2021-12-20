@@ -15,7 +15,7 @@ MAX_SIZE = int(600 // 5 * SEGMENT_SIZE)  # 10 mins
 
 
 class ListLoader(object):
-    def __init__(self, root_path, num_classes):
+    def __init__(self, root_path, num_classes, distill_mode=False, label_path=None):
         np.random.seed(SEED)
 
         self.category_count = Counter()  # number of files for each category
@@ -63,9 +63,11 @@ class ListLoader(object):
                             if end > audio_len:
                                 print(f"{end} is out of range {audio_len} [{full_path}]")
                                 continue
-                            sound_list.append(
-                                (full_path, begin, end, type_id)
-                            )
+                            if distill_mode:
+                                label_file = os.path.join(label_path, dir_name, file) + f".{index}.npy"
+                                sound_list.append((full_path, begin, end, type_id, label_file))
+                            else:
+                                sound_list.append((full_path, begin, end, type_id))
                     elif file.endswith(JPEG_PATTERN):
                         sound_list.append((full_path, type_id))
 
@@ -109,7 +111,10 @@ class BirdsDataset(data.Dataset):
             for index in range(len(self.sound_list)):
                 item = self.sound_list[index]
                 if len(item) > 2:
-                    full_path, begin, end, type_id = item
+                    if len(item) == 5:  # add distilling labels
+                        full_path, begin, end, type_id, _ = item
+                    else:
+                        full_path, begin, end, type_id = item
                 else:
                     full_path, type_id = item
                 if type_id in self._category_map:
@@ -193,26 +198,19 @@ class BirdsDataset(data.Dataset):
 
         item = self.sound_list[index]
 
-        def get_nr_mins(array):
-            return np.count_nonzero(array <= -80.0) / np.size(array)
-
-        def normalize(array):
-            if array.std() == 0:
-                return None
-            return (array - array.mean()) / array.std()
-
         if len(item) > 2:
-            full_path, begin, end, type_id = item
+            if len(item) == 5:  # add distilling labels
+                full_path, begin, end, type_id, label_file = item
+                if not os.path.isfile(label_file):
+                    return None
+                label = np.load(label_file)
+                if np.isnan(label).any() or not np.isfinite(label).all():
+                    return None
+            else:
+                full_path, begin, end, type_id = item
             audio = np.load(full_path, mmap_mode="r")
             # temporary augmentation
             sample = audio[:, begin:end].copy()
-            '''sample = audio[32:, begin:end].copy()
-            if (sample.max() - sample.min()) < 0.1:  # If there isn't any useful information
-                return None
-            # redistribution of `black` background
-            while get_nr_mins(sample) < 0.5:
-                sample -= 0.1
-                sample = np.where(sample < -80.0, -80.0, sample)'''
             if self._train:
                 sample = self._inflight_aug(sample)
         else:
@@ -220,7 +218,10 @@ class BirdsDataset(data.Dataset):
             img = cv2.imread(full_path)
             sample = img[:, :, 0]
 
-        return sample, int(type_id)
+        if len(item) == 5:  # add distilling labels
+            return sample, int(type_id), label
+        else:
+            return sample, int(type_id)
 
     def __len__(self):
         return len(self.sound_list)

@@ -24,6 +24,7 @@ config = {
     "num_workers": 2,
     "save_folder": "ckpt/",
     "ckpt_name": "bird_cls",
+    "temperature": 2.0,
 }
 
 
@@ -38,7 +39,7 @@ def save_ckpt(net, iteration):
     )
 
 
-def evaluate(net, eval_loader):
+def evaluate(args, net, eval_loader):
     total_loss = 0.0
     batch_iterator = iter(eval_loader)
     sum_accuracy = 0.0
@@ -46,7 +47,10 @@ def evaluate(net, eval_loader):
     eval_samples = 0
     aug = augment.Augment(training=False).cuda()
     for iteration in range(len(eval_loader)):
-        sounds, type_ids = next(batch_iterator)
+        if args.distill_mode:
+            sounds, type_ids, _ = next(batch_iterator)
+        else:
+            sounds, type_ids = next(batch_iterator)
         if torch.cuda.is_available():
             sounds = Variable(sounds.cuda())
             type_ids = Variable(type_ids.cuda())
@@ -106,13 +110,13 @@ def mixup_criterion(pred, y_a, y_b, lam):
 
 def train(args, train_loader, eval_loader):
     cfg.MODEL.TYPE = "regnet"
-    # RegNetY-16GF
-    cfg.REGNET.DEPTH = 18
+    # RegNetY-6.4GF
+    cfg.REGNET.DEPTH = 25
     cfg.REGNET.SE_ON = False
-    cfg.REGNET.W0 = 200
-    cfg.REGNET.WA = 106.23
-    cfg.REGNET.WM = 2.48
-    cfg.REGNET.GROUP_W = 112
+    cfg.REGNET.W0 = 112
+    cfg.REGNET.WA = 33.22
+    cfg.REGNET.WM = 2.27
+    cfg.REGNET.GROUP_W = 72
     cfg.BN.NUM_GROUPS = 4
     cfg.ANYNET.STEM_CHANNELS = 1
     cfg.MODEL.NUM_CLASSES = config["num_classes"]
@@ -185,19 +189,29 @@ def train(args, train_loader, eval_loader):
     ):
         t0 = time.time()
         try:
-            sounds, type_ids = next(batch_iterator)
+            if args.distill_mode:
+                sounds, type_ids, labels = next(batch_iterator)
+            else:
+                sounds, type_ids = next(batch_iterator)
         except StopIteration:
             batch_iterator = iter(train_loader)
-            sounds, type_ids = next(batch_iterator)
+            if args.distill_mode:
+                sounds, type_ids, labels = next(batch_iterator)
+            else:
+                sounds, type_ids = next(batch_iterator)
         except Exception as ex:
             print("Loading data exception:", ex)
 
         if torch.cuda.is_available():
             sounds = Variable(sounds.cuda())
             type_ids = Variable(type_ids.cuda())
+            if args.distill_mode:
+                labels = Variable(labels.cuda())
         else:
             sounds = Variable(sounds)
             type_ids = Variable(type_ids)
+            if args.distill_mode:
+                labels = Variable(labels)
 
         sounds = sounds.unsqueeze(3)
         sounds = sounds.permute(0, 3, 1, 2).float()
@@ -216,27 +230,33 @@ def train(args, train_loader, eval_loader):
         # augmentation
         sounds = aug(sounds)
 
-        # 'sounds' is input and 'one_hot' is target
-        inputs, targets_a, targets_b, lam = mixup_data(sounds, one_hot)
-        # forward
-        out = net(inputs)
-        loss, out_mixup = mixup_criterion(out, targets_a, targets_b, lam)
+        # Use distilling mode
+        if args.distill_mode:
+            one_hot = labels
 
-        # backprop
-        optimizer.zero_grad(set_to_none=True)
-        # loss = torch.sum(-one_hot * F.log_softmax(out, -1), -1).mean()
-        # loss = F.cross_entropy(out, type_ids)
+        for index in range(2):  # Let's mixup four times
+            # 'sounds' is input and 'one_hot' is target
+            inputs, targets_a, targets_b, lam = mixup_data(sounds, one_hot)
+            # forward
+            out = net(inputs)
+            loss, out_mixup = mixup_criterion(out, targets_a, targets_b, lam)
 
-        if args.fp16:
-            import apex.amp as amp
+            # backprop
+            optimizer.zero_grad(set_to_none=True)
+            # loss = torch.sum(-one_hot * F.log_softmax(out, -1), -1).mean()
+            # loss = F.cross_entropy(out, type_ids)
 
-            with amp.scale_loss(loss, optimizer) as scaled_loss:
-                scaled_loss.backward()
-        else:
-            loss.backward()
+            if args.fp16:
+                import apex.amp as amp
 
-        nn.utils.clip_grad_norm_(net.parameters(), max_norm=20, norm_type=2)
-        optimizer.step()
+                with amp.scale_loss(loss, optimizer) as scaled_loss:
+                    scaled_loss.backward()
+            else:
+                loss.backward()
+
+            nn.utils.clip_grad_norm_(net.parameters(), max_norm=20, norm_type=2)
+            optimizer.step()
+
         t1 = time.time()
 
         if iteration % config["verbose_period"] == 0:
@@ -263,7 +283,7 @@ def train(args, train_loader, eval_loader):
             and step != 0
         ):
             with torch.no_grad():
-                loss, accuracy = evaluate(net, eval_loader)
+                loss, accuracy = evaluate(args, net, eval_loader)
             hours = int(time.time() - train_start_time) // 3600
             now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
             print(
@@ -333,11 +353,24 @@ if __name__ == "__main__":
         type=bool,
         help="Use float16 precision to train",
     )
+    parser.add_argument(
+        "--distill_mode",
+        default=False,
+        type=bool,
+        help="Distilling from previous labels",
+    )
+    parser.add_argument(
+        "--label_path",
+        default="/media/data2/label/V7.npy",
+        type=str,
+        help="Root path of sounds",
+    )
+
     args = parser.parse_args()
 
     t0 = time.time()
     list_loader = ListLoader(
-        args.dataset_root, config["num_classes"]
+        args.dataset_root, config["num_classes"], args.distill_mode, args.label_path
     )
     list_loader.export_labelmap()
     train_list, eval_list = list_loader.sound_lists()
