@@ -234,7 +234,7 @@ def train(args, train_loader, eval_loader):
         if args.distill_mode:
             one_hot = labels
 
-        for index in range(2):  # Let's mixup four times
+        for index in range(2):  # Let's mixup two times
             # 'sounds' is input and 'one_hot' is target
             inputs, targets_a, targets_b, lam = mixup_data(sounds, one_hot)
             # forward
